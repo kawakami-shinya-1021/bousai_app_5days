@@ -55,8 +55,8 @@
     "lng": 140.7810,
     "congestion": "空きあり",
     "wheelchair": true,
-    "pet": true,
+    "pet": false,
     "help": true,
-    "medical": true
+    "medical": false
   }
 ]
