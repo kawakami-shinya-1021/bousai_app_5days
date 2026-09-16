@@ -4,12 +4,7 @@
 <h2>避難所登録</h2>
 <p>新しい避難所情報を登録します。</p>
 
-<!-- 成功・エラーメッセージ表示 -->
 {% if success %}
-  <p>{{ message }}</p>
-{% endif %}
-
-{% if error %}
   <p>{{ message }}</p>
 {% endif %}
 
@@ -18,6 +13,9 @@
     <label for="name">避難所名（必須）</label><br>
     <input type="text" id="name" name="name">
   </p>
+  {% if error %}
+    <p class="error-message">{{ message }}</p>
+  {% endif %}
   <p><button type="submit">登録</button></p>
 </form>
 {% endblock %}

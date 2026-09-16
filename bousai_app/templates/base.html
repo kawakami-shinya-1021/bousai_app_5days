@@ -4,27 +4,220 @@
   <meta charset="utf-8">
   <title>{% block title %}防災アプリ{% endblock %}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      color: #3f4f61;
+      background: #f8fafc;
+      font-family: "Noto Sans JP", "Yu Gothic", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #f8fafc;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 70px;
+      padding: 0 max(24px, calc((100% - 1380px) / 2));
+      color: #fff;
+      background: #2e5eae;
+      box-shadow: 0 2px 8px rgba(35, 72, 130, 0.18);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: 0.04em;
+    }
+
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    nav a {
+      color: #fff;
+      text-decoration: none;
+    }
+
+    nav a:hover {
+      text-decoration: underline;
+    }
+
+    hr {
+      display: none;
+    }
+
+    main {
+      width: min(910px, calc(100% - 32px));
+      margin: 32px auto 64px;
+    }
+
+    main > * {
+      margin-top: 0;
+    }
+
+    main h2,
+    main h3 {
+      color: #2e5eae;
+    }
+
+    main h2 {
+      margin-bottom: 20px;
+      font-size: 26px;
+    }
+
+    main h3 {
+      font-size: 20px;
+    }
+
+    main > p,
+    main > form,
+    main > ul,
+    main > table,
+    main > h3 {
+      padding-left: 28px;
+      padding-right: 28px;
+    }
+
+    main > h2,
+    main > p,
+    main > form,
+    main > ul,
+    main > table,
+    main > h3,
+    #shelterMap,
+    #weatherContent {
+      background: #fff;
+    }
+
+    main > h2 {
+      margin-bottom: 0;
+      padding: 26px 28px 0;
+      border-radius: 14px 14px 0 0;
+    }
+
+    main > p:last-child,
+    main > form:last-child,
+    main > ul:last-child,
+    main > table:last-child {
+      padding-bottom: 28px;
+      border-radius: 0 0 14px 14px;
+    }
+
+    #shelterMap,
+    #weatherContent,
+    main > form,
+    main > ul,
+    main > table {
+      border-radius: 14px;
+      box-shadow: 0 5px 20px rgba(55, 81, 112, 0.08);
+    }
+
+    #shelterMap {
+      margin-bottom: 36px;
+      overflow: hidden;
+    }
+
+    #weatherContent {
+      padding: 22px 28px;
+      margin-bottom: 28px;
+    }
+
+    input {
+      width: min(420px, 100%);
+      padding: 11px 13px;
+      border: 1px solid #cbd5e1;
+      border-radius: 7px;
+      font: inherit;
+    }
+
+    button {
+      padding: 10px 24px;
+      color: #fff;
+      border: 0;
+      border-radius: 7px;
+      background: #2e5eae;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #244d90;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 12px;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+    }
+
+    a {
+      color: #2e5eae;
+    }
+
+    .error-message {
+      margin: 0 0 8px;
+      padding: 0;
+      color: #d32f2f;
+      background: transparent;
+      font-weight: 700;
+    }
+
+    @media (max-width: 640px) {
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+        padding-top: 14px;
+        padding-bottom: 14px;
+      }
+
+      nav {
+        gap: 10px;
+      }
+
+      main {
+        width: min(100% - 20px, 910px);
+        margin-top: 20px;
+      }
+    }
+  </style>
 </head>
 <body>
-  <!-- ヘッダー -->
-  <h1>防災アプリ</h1>
-
-  <!-- ナビゲーション -->
-  <nav>
-    <a href="/">ホーム</a> |
-    <a href="/shelter_search">避難所検索</a> |
-    <a href="/shelter_register">避難所登録</a> |
-    <a href="/board">指示・発信ボード</a>
-    ｜
-    {% if session.logged_in %}
-      ログイン中{% if session.username %}（{{ session.username }}）{% endif %}
-      <a href="/logout">ログアウト</a>
-    {% else %}
-      未ログイン
-      <a href="/login">ログイン</a>
-    {% endif %}
-  </nav>
-  <hr>
+  <header>
+    <h1>防災アプリ</h1>
+    <nav>
+      <a href="/">ホーム</a>
+      <a href="/shelter_search">避難所検索</a>
+      <a href="/shelter_register">避難所登録</a>
+      <a href="/board">指示・発信ボード</a>
+      {% if session.logged_in %}
+        ログイン中{% if session.username %}（{{ session.username }}）{% endif %}
+        <a href="/logout">ログアウト</a>
+      {% else %}
+        未ログイン
+        <a href="/login">ログイン</a>
+      {% endif %}
+    </nav>
+  </header>
 
   <main>
     <!-- ここに子テンプレートの content が入る -->
