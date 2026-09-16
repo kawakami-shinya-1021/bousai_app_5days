@@ -1,14 +1,62 @@
 [
   {
     "id": 1,
-    "name": "御所見小学校"
+    "name": "青森市立古川小学校",
+    "address": "青森県青森市古川3丁目7-14",
+    "lat": 40.8223,
+    "lng": 140.7343,
+    "congestion": "空きあり",
+    "wheelchair": true,
+    "pet": true,
+    "help": true,
+    "medical": false
   },
   {
     "id": 2,
-    "name": "片瀬小学校"
+    "name": "青森市立浦町小学校",
+    "address": "青森県青森市中央2丁目17-13",
+    "lat": 40.8190,
+    "lng": 140.7487,
+    "congestion": "やや混雑",
+    "wheelchair": true,
+    "pet": false,
+    "help": true,
+    "medical": true
+  },
+  {
+    "id": 3,
+    "name": "青森市立篠田小学校",
+    "address": "青森県青森市篠田3丁目16-2",
+    "lat": 40.8282,
+    "lng": 140.7195,
+    "congestion": "空きあり",
+    "wheelchair": false,
+    "pet": true,
+    "help": false,
+    "medical": false
+  },
+  {
+    "id": 4,
+    "name": "青森市立千刈小学校",
+    "address": "青森県青森市千刈1丁目10-20",
+    "lat": 40.8262,
+    "lng": 140.7112,
+    "congestion": "満員",
+    "wheelchair": true,
+    "pet": false,
+    "help": false,
+    "medical": true
   },
   {
     "id": 5,
-    "name": "鵠洋小学校"
+    "name": "青森市立造道小学校",
+    "address": "青森県青森市造道3丁目4-16",
+    "lat": 40.8270,
+    "lng": 140.7810,
+    "congestion": "空きあり",
+    "wheelchair": true,
+    "pet": true,
+    "help": true,
+    "medical": true
   }
 ]

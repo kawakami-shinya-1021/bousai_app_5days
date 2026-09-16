@@ -5,6 +5,7 @@ import json
 import os
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from math import hypot
 
 # app.py はプロジェクト直下に置く。
 # 実体（templates / static / data）は bousai_app/ 配下にあるので、そこを参照する。
@@ -148,6 +149,24 @@ def format_report_time(iso_str):
 def filter_shelters(district=None):
     """district 指定があれば一致する避難所のみ、なければ全件を返す"""
     return [s for s in shelters if not district or s.get('district') == district]
+
+
+CURRENT_LOCATION = {
+    'address': '青森県青森市古川3丁目',
+    'lat': 40.8223,
+    'lng': 140.7224
+}
+
+
+def sort_shelters_by_distance(shelter_list):
+    """現在地から近い順に避難所を並べる"""
+    return sorted(
+        shelter_list,
+        key=lambda shelter: hypot(
+            float(shelter.get('lat', float('inf'))) - CURRENT_LOCATION['lat'],
+            float(shelter.get('lng', float('inf'))) - CURRENT_LOCATION['lng']
+        )
+    )
 
 
 def parse_area_warnings(warning_data):
@@ -315,7 +334,11 @@ def shelter_search():
 # 全施設一覧ページ
 @app.route('/all_shelters')
 def all_shelters():
-    return render_template('search_results.html', results=shelters)
+    return render_template(
+        'search_results.html',
+        results=sort_shelters_by_distance(shelters),
+        current_location=CURRENT_LOCATION
+    )
 
 
 # 指示ボード：住民向けの指示を一覧で確認する
@@ -328,8 +351,12 @@ def board():
 # 検索結果ページ：templates/search_results.html を返す
 @app.route('/search_results')
 def search_results():
-    results = filter_shelters(request.args.get('district'))
-    return render_template('search_results.html', results=results)
+    results = sort_shelters_by_distance(filter_shelters(request.args.get('district')))
+    return render_template(
+        'search_results.html',
+        results=results,
+        current_location=CURRENT_LOCATION
+    )
 
 # JSON API：/shelters?district=地区名
 @app.route('/shelters', methods=['GET'])

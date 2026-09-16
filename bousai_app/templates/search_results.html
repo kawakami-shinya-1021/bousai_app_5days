@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 
 {% block content %}
+<!-- Leaflet.js（地図描画ライブラリ）の読み込み -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <style>
   .search-results-page { color: #20252b; }
   .search-results-page h2 {
@@ -32,15 +36,24 @@
   .results-list-column,
   .results-secondary-column { min-width: 0; }
   .results-map {
-    height: 280px;
+    height: 320px;
     border: 1px solid #aaa;
-    background: #fff;
+    background: #e5e7eb;
+    z-index: 1;
   }
-  .results-map iframe {
-    display: block;
-    width: 100%;
-    height: 100%;
+  .current-location-marker {
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: #1976d2;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, .45);
+  }
+  .nearest-shelter-marker {
+    background: transparent;
     border: 0;
+    font-size: 28px;
+    line-height: 36px;
+    text-align: center;
+    text-shadow: 0 1px 2px #fff;
   }
   .results-group-title {
     margin: 0 0 16px;
@@ -53,6 +66,8 @@
   .results-secondary {
     margin-top: 16px;
   }
+  
+  /* 上位3件用のカード */
   .shelter-card {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 110px;
@@ -82,6 +97,42 @@
     border-left: 1px solid #aaa;
     font-size: 13px;
   }
+
+  /* その他の避難所用（改行なしの1行レイアウト） */
+  .shelter-card-inline {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border: 1px solid #aaa;
+    background: #fff;
+    font-size: 14px;
+  }
+  .shelter-card-inline:last-child { margin-bottom: 0; }
+  .shelter-card-inline .shelter-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #111827;
+    white-space: nowrap;
+  }
+  .shelter-card-inline .shelter-route {
+    white-space: nowrap;
+  }
+  .shelter-card-inline .shelter-route a {
+    color: #168bd0;
+  }
+  .shelter-card-inline .shelter-address {
+    color: #374151;
+  }
+  .shelter-card-inline .shelter-congestion {
+    margin-left: auto;
+    font-size: 13px;
+    color: #4b5563;
+    white-space: nowrap;
+  }
+
   .results-actions {
     display: flex;
     gap: 20px;
@@ -106,15 +157,12 @@
     font-size: 15px;
   }
   @media (max-width: 700px) {
-    .results-group {
-      padding: 16px;
-    }
-    .results-group-primary {
-      grid-template-columns: 1fr;
-    }
-    .results-map { height: 220px; }
+    .results-group { padding: 16px; }
+    .results-group-primary { grid-template-columns: 1fr; }
+    .results-map { height: 240px; }
     .results-actions { flex-wrap: wrap; gap: 10px; }
     .results-actions a { flex: 1 1 140px; }
+    .shelter-card-inline .shelter-congestion { margin-left: 0; }
   }
 </style>
 
@@ -124,11 +172,23 @@
 
   <div class="results-group results-group-primary">
     <div class="results-map-column">
-      <div class="results-map" aria-label="青森市付近の地図">
-        <iframe
-          title="青森市付近の地図"
-          src="https://www.openstreetmap.org/export/embed.html?bbox=140.69%2C40.80%2C140.82%2C40.85&amp;layer=mapnik&amp;marker=40.8244%2C140.7400"
-          loading="lazy"></iframe>
+      <!-- 地図表示エリア -->
+      <div id="map" class="results-map" aria-label="避難所マップ">
+        <span class="current-location-data"
+          data-lat="{{ current_location.lat }}"
+          data-lng="{{ current_location.lng }}"
+          data-address="{{ current_location.address }}"></span>
+        {% for shelter in results[:3] %}
+          {% if shelter.lat and shelter.lng %}
+            <span class="shelter-marker-data"
+              data-lat="{{ shelter.lat }}"
+              data-lng="{{ shelter.lng }}"
+              data-index="{{ loop.index }}"
+              data-name="{{ shelter.name }}"
+              data-address="{{ shelter.address }}"></span>
+          {% endif %}
+        {% endfor %}
+      </div>
     </div>
 
     <div class="results-list-column">
@@ -138,13 +198,15 @@
         <article class="shelter-card">
           <div class="shelter-card-main">
             <p class="shelter-card-name">{{ loop.index }}．{{ shelter.name }}</p>
-            <p class="shelter-card-detail">ルート：<a href="#">マップのリンク</a><br>住所：情報未登録</p>
+            <p class="shelter-card-detail">
+              ルート：<a href="https://www.google.com/maps/search/?api=1&query={{ shelter.name }}" target="_blank" rel="noopener noreferrer">マップのリンク</a><br>
+              住所：{{ shelter.address }}
+            </p>
           </div>
-          <div class="shelter-card-meta">混雑度<br>情報未登録</div>
+          <div class="shelter-card-meta">混雑度<br>{{ shelter.congestion }}</div>
         </article>
         {% endfor %}
       {% endif %}
-
     </div>
   </div>
 
@@ -153,13 +215,13 @@
       <h3 class="results-group-title">その他の避難所はこちら</h3>
       {% if results[3:] %}
         {% for shelter in results[3:] %}
-        <article class="shelter-card">
-          <div class="shelter-card-main">
-            <p class="shelter-card-name">{{ loop.index + 3 }}．{{ shelter.name }}</p>
-            <p class="shelter-card-detail">ルート：<a href="#">マップのリンク</a><br>住所：情報未登録</p>
-          </div>
-          <div class="shelter-card-meta">混雑度<br>情報未登録</div>
-        </article>
+        <!-- 改行せず1行に並ぶレイアウト -->
+        <div class="shelter-card-inline">
+          <span class="shelter-name">{{ loop.index + 3 }}．{{ shelter.name }}</span>
+          <span class="shelter-route">ルート：<a href="https://www.google.com/maps/search/?api=1&query={{ shelter.name }}" target="_blank" rel="noopener noreferrer">マップのリンク</a></span>
+          <span class="shelter-address">住所：{{ shelter.address }}</span>
+          <span class="shelter-congestion">混雑度：{{ shelter.congestion }}</span>
+        </div>
         {% endfor %}
       {% else %}
         <p class="results-empty">4番目以降の避難所はありません。</p>
@@ -172,4 +234,55 @@
     <a href="/shelter_search">検索に戻る</a>
   </div>
 </section>
+
+<!-- 地図描画・マーカー立てのスクリプト -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // 青森市中心付近を表示（緯度, 経度, ズームレベル）
+    const map = L.map('map').setView([{{ current_location.lat }}, {{ current_location.lng }}], 13);
+
+    // OpenStreetMap タイルの追加
+    // 修正後（国土地理院の標準地図を使用）
+L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">国土地理院</a>'
+}).addTo(map);
+
+    const currentLocationData = document.querySelector('.current-location-data');
+    const currentLat = Number(currentLocationData.dataset.lat);
+    const currentLng = Number(currentLocationData.dataset.lng);
+    const currentAddress = currentLocationData.dataset.address;
+
+    // 現在地を青い丸で表示
+    L.circleMarker([currentLat, currentLng], {
+      radius: 9,
+      className: 'current-location-marker',
+      color: '#fff',
+      fillColor: '#1976d2',
+      fillOpacity: 1,
+      weight: 3
+    }).addTo(map).bindPopup('<b>現在地</b><br>住所：' + currentAddress);
+
+    // 現在地に近い上位3件を「📍」で表示
+    document.querySelectorAll('.shelter-marker-data').forEach(function(markerData) {
+      const lat = Number(markerData.dataset.lat);
+      const lng = Number(markerData.dataset.lng);
+      const index = markerData.dataset.index;
+      const name = markerData.dataset.name;
+      const address = markerData.dataset.address;
+
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const shelterIcon = L.divIcon({
+          className: 'nearest-shelter-marker',
+          html: '📍',
+          iconSize: [36, 36],
+          iconAnchor: [18, 32]
+        });
+
+        L.marker([lat, lng], { icon: shelterIcon })
+          .addTo(map)
+          .bindPopup('<b>' + index + '．' + name + '</b><br>住所：' + address);
+      }
+    });
+  });
+</script>
 {% endblock %}
