@@ -184,6 +184,8 @@
     border: 1px solid #aaa;
     font-size: 15px;
   }
+  .shelter-card-detail details,
+  .shelter-card-detail .details { margin-top: 6px; }
   @media (max-width: 768px) {
     .results-group { padding: 16px; }
     .results-group-primary { grid-template-columns: 1fr; }
@@ -214,7 +216,8 @@
             <p class="shelter-card-name">{{ loop.index }}．{{ shelter.name }}</p>
             <p class="shelter-card-detail">
               ルート：<a href="https://www.google.com/maps/search/?api=1&query={{ shelter.name }}" target="_blank" rel="noopener noreferrer">マップのリンク</a><br>
-              住所：{{ shelter.address }}
+              住所：{{ shelter.address or '未登録' }}<br>
+              詳細：{{ shelter.details or '未登録' }}
             </p>
           </div>
           <div class="shelter-card-meta">
@@ -226,17 +229,17 @@
             </div>
             
             <div class="feature-icons">
+              {% if shelter.pregnant %}
+                <div class="feature-item"><span class="icon">🤰</span><span class="label">妊婦</span></div>
+              {% endif %}
               {% if shelter.wheelchair %}
-                <div class="feature-item"><span class="icon">♿</span><span class="label">車椅子</span></div>
+                <div class="feature-item"><span class="icon">♿</span><span class="label">車いす</span></div>
               {% endif %}
               {% if shelter.pet %}
-                <div class="feature-item"><span class="icon">🐾</span><span class="label">ペットOK</span></div>
+                <div class="feature-item"><span class="icon">🐾</span><span class="label">ペット同伴</span></div>
               {% endif %}
-              {% if shelter.help %}
-                <div class="feature-item"><span class="icon">🆘</span><span class="label">要配慮</span></div>
-              {% endif %}
-              {% if shelter.medical %}
-                <div class="feature-item"><span class="icon">🩹</span><span class="label">医療</span></div>
+              {% if shelter.disability or shelter.help %}
+                <div class="feature-item"><span class="icon">🤝</span><span class="label">障がいのある方</span></div>
               {% endif %}
             </div>
           </div>
@@ -254,7 +257,8 @@
         <div class="shelter-card-inline">
           <span class="shelter-name">{{ loop.index + 3 }}．{{ shelter.name }}</span>
           <span class="shelter-route">ルート：<a href="https://www.google.com/maps/search/?api=1&query={{ shelter.name }}" target="_blank" rel="noopener noreferrer">マップのリンク</a></span>
-          <span class="shelter-address">住所：{{ shelter.address }}</span>
+          <span class="shelter-address">住所：{{ shelter.address or '未登録' }}</span>
+          <span class="shelter-address">詳細：{{ shelter.details or '未登録' }}</span>
           <span class="shelter-congestion">
             混雑度：
             <strong class="{% if shelter.congestion in ['空きあり', '空き有り'] %}congestion-green{% elif '混雑' in shelter.congestion %}congestion-orange{% elif shelter.congestion == '満員' %}congestion-red{% endif %}">
@@ -264,22 +268,24 @@
           
           <div class="feature-icons-inline">
             <div class="feature-icons">
+              {% if shelter.pregnant %}
+                <div class="feature-item"><span class="icon">🤰</span><span class="label">妊婦</span></div>
+              {% endif %}
               {% if shelter.wheelchair %}
-                <div class="feature-item"><span class="icon">♿</span><span class="label">車椅子</span></div>
+                <div class="feature-item"><span class="icon">♿</span><span class="label">車いす</span></div>
               {% endif %}
               {% if shelter.pet %}
-                <div class="feature-item"><span class="icon">🐾</span><span class="label">ペットOK</span></div>
+                <div class="feature-item"><span class="icon">🐾</span><span class="label">ペット同伴</span></div>
               {% endif %}
-              {% if shelter.help %}
-                <div class="feature-item"><span class="icon">🆘</span><span class="label">要配慮</span></div>
-              {% endif %}
-              {% if shelter.medical %}
-                <div class="feature-item"><span class="icon">🩹</span><span class="label">医療</span></div>
+              {% if shelter.disability or shelter.help %}
+                <div class="feature-item"><span class="icon">🤝</span><span class="label">障がいのある方</span></div>
               {% endif %}
             </div>
           </div>
         </div>
         {% endfor %}
+      {% elif not results %}
+        <p class="results-empty">該当する避難所が見つかりませんでした</p>
       {% else %}
         <p class="results-empty">4番目以降の避難所はありません。</p>
       {% endif %}
@@ -293,6 +299,9 @@
 </section>
 
 <!-- Jinja2のデータを専用のJSONエリアに配置 -->
+<script id="current-location-data" type="application/json">
+  {{ current_location|tojson|safe }}
+</script>
 <script id="shelter-data" type="application/json">
   {{ results|tojson|safe }}
 </script>
@@ -300,15 +309,18 @@
 <!-- 地図描画処理 -->
 <script>
   document.addEventListener('DOMContentLoaded', function() {
-    const currentLat = 40.8223;
-    const currentLng = 140.7223;
+    if (!window.L) return;
+    const currentLocationElement = document.getElementById('current-location-data');
+    const currentLocation = currentLocationElement ? JSON.parse(currentLocationElement.textContent) : null;
+    if (!currentLocation) return;
+    const currentLat = currentLocation.lat;
+    const currentLng = currentLocation.lng;
 
     const map = L.map('map').setView([currentLat, currentLng], 14);
 
-    // CARTO Voyager タイル（OSMベース）
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>'
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
 }).addTo(map);
 
     L.circleMarker([currentLat, currentLng], {
@@ -331,11 +343,13 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r
     const shelters = shelterDataElement ? JSON.parse(shelterDataElement.textContent) : [];
 
     if (Array.isArray(shelters)) {
-      shelters.slice(0, 3).forEach((shelter, index) => {
-        if (shelter.lat && shelter.lng) {
-          L.marker([shelter.lat, shelter.lng], { icon: pinIcon })
+      shelters.forEach((shelter, index) => {
+        const latitude = shelter.latitude ?? shelter.lat;
+        const longitude = shelter.longitude ?? shelter.lng;
+        if (latitude !== undefined && longitude !== undefined) {
+          L.marker([latitude, longitude], { icon: pinIcon })
             .addTo(map)
-            .bindPopup(`<b>${index + 1}．${shelter.name}</b><br>住所：${shelter.address}`);
+            .bindPopup(`<b>${index + 1}．${shelter.name}</b><br>住所：${shelter.address || '未登録'}`);
         }
       });
     }

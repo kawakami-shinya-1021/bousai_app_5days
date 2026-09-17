@@ -1,5 +1,5 @@
-from flask import Flask, jsonify, request, render_template, session, redirect, url_for
-from urllib.parse import urlparse, urljoin
+from flask import Flask, Response, jsonify, request, render_template, session, redirect, url_for
+from urllib.parse import urlparse, urljoin, quote
 from functools import wraps
 import json
 import os
@@ -151,6 +151,96 @@ def filter_shelters(district=None):
     return [s for s in shelters if not district or s.get('district') == district]
 
 
+SEARCH_CONDITIONS = ('pregnant', 'wheelchair', 'pet', 'disability')
+
+
+def get_shelter_coordinates(shelter):
+    """新形式と既存形式の座標を読み、無効な値は座標なしとして扱う"""
+    latitude = shelter.get('latitude', shelter.get('lat'))
+    longitude = shelter.get('longitude', shelter.get('lng'))
+    try:
+        return float(latitude), float(longitude)
+    except (TypeError, ValueError):
+        return None, None
+
+
+def geocode_address(address):
+    """住所をNominatimで座標へ変換する。失敗時はNoneを返す"""
+    if not address:
+        return None
+
+    query = quote(address)
+    request_url = (
+        'https://nominatim.openstreetmap.org/search'
+        f'?q={query}&format=jsonv2&limit=1'
+    )
+    try:
+        req = urllib.request.Request(
+            request_url,
+            headers={'User-Agent': 'bousai-app-shelter-geocoder/1.0'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            candidates = json.loads(response.read().decode('utf-8'))
+        if not candidates:
+            return None
+        return float(candidates[0]['lat']), float(candidates[0]['lon'])
+    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+        return None
+
+
+def shelter_form_values(source):
+    """フォームまたはJSONから登録項目を読み取り、共通形式にする"""
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        name = str(data.get('name', '')).strip()
+        address = str(data.get('address', '')).strip()
+        capacity_value = data.get('capacity', '')
+        support_options = data.get('support_options', [])
+    else:
+        name = source.get('name', '').strip()
+        address = source.get('address', '').strip()
+        capacity_value = source.get('capacity', '').strip()
+        support_options = source.getlist('support_options')
+
+    errors = []
+    if not name:
+        errors.append('避難所名は必須項目です。')
+    if not address:
+        errors.append('住所は必須項目です。')
+    try:
+        capacity = int(capacity_value)
+        if capacity < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append('最大収容人数は0以上の整数で入力してください。')
+        capacity = None
+
+    valid_options = {'車いす対応可', 'ペット同伴可', '福祉避難所'}
+    if not isinstance(support_options, list):
+        support_options = []
+    support_options = [option for option in support_options if option in valid_options]
+    return {
+        'name': name,
+        'address': address,
+        'capacity': capacity if not errors else capacity_value,
+        'support_options': support_options,
+        'errors': errors,
+    }
+
+
+def apply_shelter_values(shelter, values):
+    """新旧の保存形式を保ったまま登録項目を上書きする"""
+    shelter.update({
+        'name': values['name'],
+        'address': values['address'],
+        'capacity': values['capacity'],
+        'support_options': values['support_options'],
+        'wheelchair': '車いす対応可' in values['support_options'],
+        'pet': 'ペット同伴可' in values['support_options'],
+        'disability': '福祉避難所' in values['support_options'],
+    })
+
+
 CURRENT_LOCATION = {
     'address': '青森県青森市古川3丁目',
     'lat': 40.8223,
@@ -160,12 +250,18 @@ CURRENT_LOCATION = {
 
 def sort_shelters_by_distance(shelter_list):
     """現在地から近い順に避難所を並べる"""
+    def distance(shelter):
+        latitude, longitude = get_shelter_coordinates(shelter)
+        if latitude is None or longitude is None:
+            return float('inf')
+        return hypot(
+            latitude - CURRENT_LOCATION['lat'],
+            longitude - CURRENT_LOCATION['lng']
+        )
+
     return sorted(
         shelter_list,
-        key=lambda shelter: hypot(
-            float(shelter.get('lat', float('inf'))) - CURRENT_LOCATION['lat'],
-            float(shelter.get('lng', float('inf'))) - CURRENT_LOCATION['lng']
-        )
+        key=distance
     )
 
 
@@ -307,29 +403,121 @@ def logout():
 @login_required
 def shelter_register():
     if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        if not name:
+        values = shelter_form_values(request.form)
+        if values['errors']:
             return render_template(
                 'shelter_register.html',
                 error=True,
-                message='避難所名は必須項目です。'
+                message=' '.join(values['errors']),
+                form_values=values,
+                checked_options=values['support_options'],
+                current_location=CURRENT_LOCATION
             )
 
-        next_id = max((shelter.get('id', 0) for shelter in shelters), default=0) + 1
-        shelters.append({'id': next_id, 'name': name})
+        shelter = {
+            'id': max((shelter.get('id', 0) for shelter in shelters), default=0) + 1,
+            'details': request.form.get('details', '').strip(),
+        }
+        apply_shelter_values(shelter, values)
+        coordinates = geocode_address(values['address'])
+        if coordinates:
+            shelter['latitude'], shelter['longitude'] = coordinates
+
+        shelters.append(shelter)
         save_shelters()
         return render_template(
             'shelter_register.html',
             success=True,
-            message='避難所を登録しました。'
+            message='避難所を登録しました。',
+            current_location=CURRENT_LOCATION
         )
 
-    return render_template('shelter_register.html')
+    return render_template('shelter_register.html', current_location=CURRENT_LOCATION)
+
+
+@app.route('/api/geocode')
+@login_required
+def api_geocode():
+    address = request.args.get('address', '').strip()
+    if not address:
+        return jsonify({'error': '住所を入力してください。'}), 400
+    coordinates = geocode_address(address)
+    if not coordinates:
+        return jsonify({'error': '住所が見つからないか、住所検索サービスに接続できませんでした。'}), 404
+    latitude, longitude = coordinates
+    return jsonify({
+        'latitude': latitude,
+        'longitude': longitude,
+        'display_name': address,
+    })
+
+
+@app.route('/api/map-tiles/<int:zoom>/<int:x>/<int:y>.png')
+@login_required
+def api_map_tiles(zoom, x, y):
+    if not 0 <= zoom <= 19 or not 0 <= x < 2 ** zoom or not 0 <= y < 2 ** zoom:
+        return jsonify({'error': '無効な地図タイルです。'}), 400
+    tile_url = f'https://tile.openstreetmap.org/{zoom}/{x}/{y}.png'
+    try:
+        tile_request = urllib.request.Request(
+            tile_url,
+            headers={'User-Agent': 'bousai-app-map-proxy/1.0'}
+        )
+        with urllib.request.urlopen(tile_request, timeout=5) as response:
+            return Response(response.read(), mimetype='image/png')
+    except OSError:
+        return jsonify({'error': '地図タイルを取得できませんでした。'}), 502
+
+
+@app.route('/api/shelters', methods=['GET'])
+@login_required
+def api_shelter_list():
+    return jsonify([{'id': shelter.get('id'), 'name': shelter.get('name', '')} for shelter in shelters])
+
+
+@app.route('/api/shelters/<int:shelter_id>', methods=['GET', 'PUT', 'PATCH'])
+@login_required
+def api_shelter_detail(shelter_id):
+    shelter = next((item for item in shelters if item.get('id') == shelter_id), None)
+    if shelter is None:
+        return jsonify({'error': '避難所が見つかりません。'}), 404
+    if request.method == 'GET':
+        support_options = shelter.get('support_options')
+        if support_options is None:
+            support_options = []
+            if shelter.get('wheelchair'):
+                support_options.append('車いす対応可')
+            if shelter.get('pet'):
+                support_options.append('ペット同伴可')
+            if shelter.get('disability') or shelter.get('help'):
+                support_options.append('福祉避難所')
+        return jsonify({
+            'id': shelter.get('id'),
+            'name': shelter.get('name', ''),
+            'address': shelter.get('address', ''),
+            'capacity': shelter.get('capacity', ''),
+            'support_options': support_options,
+            'latitude': shelter.get('latitude', shelter.get('lat')),
+            'longitude': shelter.get('longitude', shelter.get('lng')),
+        })
+
+    values = shelter_form_values(request.get_json(silent=True) or {})
+    if values['errors']:
+        return jsonify({'error': ' '.join(values['errors'])}), 400
+    apply_shelter_values(shelter, values)
+    coordinates = geocode_address(values['address'])
+    if coordinates:
+        shelter['latitude'], shelter['longitude'] = coordinates
+    save_shelters()
+    return jsonify({'message': '避難所を更新しました。'})
 
 # 避難所検索ページ
 @app.route('/shelter_search')
 def shelter_search():
-    return render_template('shelter_search.html', shelters=shelters)
+    return render_template(
+        'shelter_search.html',
+        current_location=CURRENT_LOCATION
+    )
 
 # 全施設一覧ページ
 @app.route('/all_shelters')
@@ -349,13 +537,25 @@ def board():
     return render_template('board.html', instructions=resident_instructions)
 
 # 検索結果ページ：templates/search_results.html を返す
-@app.route('/search_results')
+@app.route('/search_results', methods=['GET', 'POST'])
 def search_results():
-    results = sort_shelters_by_distance(filter_shelters(request.args.get('district')))
+    selected_conditions = []
+    if request.method == 'POST':
+        selected_conditions = [
+            condition for condition in SEARCH_CONDITIONS
+            if request.form.get(condition) == 'on'
+        ]
+
+    results = filter_shelters(request.args.get('district'))
+    results = [
+        shelter for shelter in results
+        if all(shelter.get(condition, False) is True for condition in selected_conditions)
+    ]
     return render_template(
         'search_results.html',
         results=results,
-        current_location=CURRENT_LOCATION
+        current_location=CURRENT_LOCATION,
+        selected_conditions=selected_conditions
     )
 
 # JSON API：/shelters?district=地区名

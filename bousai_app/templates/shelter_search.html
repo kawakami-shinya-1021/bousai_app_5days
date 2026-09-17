@@ -1,19 +1,86 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>避難所検索</h2>
-<p>登録されている避難所を確認できます。</p>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+	.shelter-search-page h2 { margin-bottom: 8px; }
+	.shelter-search-map {
+		height: 360px;
+		margin: 20px 0;
+		border: 1px solid #94a3b8;
+		background: #e2e8f0;
+	}
+	.shelter-search-form {
+		padding: 22px;
+		border: 2px solid #334155;
+		background: #f8fafc;
+	}
+	.shelter-search-form h3 { margin-top: 0; }
+	.condition-list {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 12px;
+		margin: 16px 0 22px;
+	}
+	.condition-list label {
+		display: block;
+		padding: 13px 14px;
+		border: 1px solid #cbd5e1;
+		background: #fff;
+		cursor: pointer;
+	}
+	.condition-list input { width: auto; margin-right: 8px; }
+	.shelter-search-button {
+		min-width: 150px;
+		padding: 13px 24px;
+		background: #c2410c;
+		font-weight: 700;
+	}
+	.shelter-search-button:hover { background: #9a3412; }
+	@media (max-width: 640px) {
+		.shelter-search-map { height: 280px; }
+		.shelter-search-form { padding: 16px; }
+		.condition-list { grid-template-columns: 1fr; }
+	}
+</style>
 
-<h3>避難所一覧</h3>
-{% if shelters %}
-	<ul>
-		{% for shelter in shelters %}
-		<li>{{ shelter.name }}</li>
-		{% endfor %}
-	</ul>
-{% else %}
-	<p>登録されている施設はありません。</p>
-{% endif %}
+<section class="shelter-search-page">
+	<h2>避難所検索</h2>
+	<p>登録地域：{{ current_location.address }}</p>
 
-<p><a href="/all_shelters">全施設一覧</a></p>
+	<div id="shelter-search-map" class="shelter-search-map" aria-label="登録地域と避難所の地図"></div>
+
+	<form class="shelter-search-form" method="post" action="{{ url_for('search_results') }}">
+		<h3>支援条件から検索</h3>
+		<p>次の項目に当てはまる場合はチェックを入れて、検索してください。</p>
+		<div class="condition-list">
+			<label><input type="checkbox" name="pregnant">🤰 妊婦</label>
+			<label><input type="checkbox" name="wheelchair">♿ 車いす利用者</label>
+			<label><input type="checkbox" name="pet">🐾 ペット同伴</label>
+			<label><input type="checkbox" name="disability">🤝 障がいのある方</label>
+		</div>
+		<button class="shelter-search-button" type="submit">検索</button>
+	</form>
+</section>
+
+<script id="shelter-search-location" type="application/json">{{ current_location|tojson|safe }}</script>
+<script>
+	document.addEventListener('DOMContentLoaded', function () {
+		if (!window.L) return;
+		const locationElement = document.getElementById('shelter-search-location');
+		const location = locationElement ? JSON.parse(locationElement.textContent) : null;
+		const mapElement = document.getElementById('shelter-search-map');
+		if (!location || !mapElement) return;
+
+		const map = L.map(mapElement).setView([location.lat, location.lng], 14);
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			maxZoom: 19,
+			attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+		}).addTo(map);
+		L.circleMarker([location.lat, location.lng], {
+			radius: 9, color: '#1d4ed8', fillColor: '#3b82f6', fillOpacity: 0.85, weight: 3
+		}).addTo(map).bindPopup('<b>現在地</b><br>' + location.address);
+	});
+</script>
 {% endblock %}

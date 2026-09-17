@@ -15,7 +15,7 @@
     "id": 2,
     "name": "青森市立浦町小学校",
     "address": "青森県青森市中央2丁目17-13",
-    "lat": 40.8190,
+    "lat": 40.819,
     "lng": 140.7487,
     "congestion": "やや混雑",
     "wheelchair": true,
@@ -51,12 +51,27 @@
     "id": 5,
     "name": "青森市立造道小学校",
     "address": "青森県青森市造道3丁目4-16",
-    "lat": 40.8270,
-    "lng": 140.7810,
+    "lat": 40.827,
+    "lng": 140.781,
     "congestion": "空きあり",
     "wheelchair": true,
     "pet": false,
     "help": true,
     "medical": false
+  },
+  {
+    "id": 6,
+    "details": "",
+    "name": "かわｋみ",
+    "address": "兵庫県明石市大久保町大窪1092-11",
+    "capacity": 11,
+    "support_options": [
+      "車いす対応可",
+      "ペット同伴可",
+      "福祉避難所"
+    ],
+    "wheelchair": true,
+    "pet": true,
+    "disability": true
   }
 ]

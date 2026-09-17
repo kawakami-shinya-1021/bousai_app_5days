@@ -1,21 +1,216 @@
 {% extends "base.html" %}
+{% block title %}避難所登録 - 防災アプリ{% endblock %}
 
 {% block content %}
-<h2>避難所登録</h2>
-<p>新しい避難所情報を登録します。</p>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  .shelter-register-page h2 { margin-bottom: 8px; }
+  .shelter-register-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, .7fr);
+    gap: 28px;
+    padding: 28px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 5px 20px rgba(55, 81, 112, .08);
+  }
+  .shelter-register-column { min-width: 0; }
+  .shelter-register-column h3 { margin-top: 0; }
+  .shelter-register-column p { padding: 0; }
+  .shelter-register-field { margin: 0 0 18px; }
+  .shelter-register-field label { display: inline-block; margin-bottom: 6px; font-weight: 700; }
+  .shelter-register-field input[type="number"] { width: min(220px, 100%); }
+  .support-options { display: grid; gap: 8px; margin: 8px 0 20px; }
+  .support-options label { display: block; }
+  .support-options input { width: auto; margin-right: 8px; }
+  .register-map {
+    height: 280px;
+    margin: 8px 0 18px;
+    border: 1px solid #cbd5e1;
+    background: #e2e8f0;
+  }
+  .shelter-select { width: 100%; padding: 11px 13px; border: 1px solid #cbd5e1; border-radius: 7px; font: inherit; }
+  .register-message { margin: 0 0 16px; padding: 10px 12px; }
+  .register-message.error { color: #d32f2f; background: #fff1f2; border: 1px solid #fecaca; }
+  .register-message.success { color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .geocode-message { min-height: 1.5em; color: #d32f2f; font-size: 14px; }
+  @media (max-width: 700px) {
+    .shelter-register-card { grid-template-columns: 1fr; padding: 20px; }
+  }
+</style>
 
-{% if success %}
-  <p>{{ message }}</p>
-{% endif %}
+<section class="shelter-register-page">
+  <h2>避難所登録</h2>
+  <p>避難所の新規登録と変更を行います。</p>
 
-<form method="POST">
-  <p>
-    <label for="name">避難所名（必須）</label><br>
-    <input type="text" id="name" name="name">
-  </p>
-  {% if error %}
-    <p class="error-message">{{ message }}</p>
-  {% endif %}
-  <p><button type="submit">登録</button></p>
-</form>
+  {% if error %}<p class="register-message error" role="alert">{{ message }}</p>{% endif %}
+  {% if success %}<p class="register-message success" role="status">{{ message }}</p>{% endif %}
+
+  <div class="shelter-register-card">
+    <div class="shelter-register-column">
+      <h3>新規登録</h3>
+      <form id="shelter-register-form" method="post" action="{{ url_for('shelter_register') }}">
+        <p class="shelter-register-field">
+          <label for="name">避難所名</label><br>
+          <input type="text" id="name" name="name" required placeholder="避難所名を入力してください" value="{{ form_values.get('name', '') if form_values else '' }}">
+        </p>
+        <p class="shelter-register-field">
+          <label for="address">住所</label><br>
+          <input type="text" id="address" name="address" required placeholder="住所を入力してください" value="{{ form_values.get('address', '') if form_values else '' }}">
+          <span id="geocode-message" class="geocode-message" role="status"></span>
+        </p>
+        <p class="shelter-register-field">
+          <label for="capacity">最大収容人数</label><br>
+          <input type="number" id="capacity" name="capacity" required min="0" step="1" placeholder="人数を入力してください" value="{{ form_values.get('capacity', '') if form_values else '' }}">
+        </p>
+        <fieldset class="support-options">
+          <legend>その他対応</legend>
+          <label><input type="checkbox" name="support_options" value="車いす対応可"{% if '車いす対応可' in (checked_options|default([])) %} checked{% endif %}>車いす対応可</label>
+          <label><input type="checkbox" name="support_options" value="ペット同伴可"{% if 'ペット同伴可' in (checked_options|default([])) %} checked{% endif %}>ペット同伴可</label>
+          <label><input type="checkbox" name="support_options" value="福祉避難所"{% if '福祉避難所' in (checked_options|default([])) %} checked{% endif %}>福祉避難所</label>
+        </fieldset>
+        <div id="register-map" class="register-map" aria-label="避難所の位置"></div>
+        <button type="submit">登録する</button>
+      </form>
+    </div>
+
+    <div class="shelter-register-column">
+      <h3>変更</h3>
+      <label for="shelter-select">変更する避難所</label>
+      <select id="shelter-select" class="shelter-select">
+        <option value="">▼ 選択してください</option>
+      </select>
+      <p id="change-message" class="geocode-message" role="status"></p>
+    </div>
+  </div>
+</section>
+
+<script id="register-location" type="application/json">{{ current_location|tojson|safe }}</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const form = document.getElementById('shelter-register-form');
+  const select = document.getElementById('shelter-select');
+  const addressInput = document.getElementById('address');
+  const geocodeMessage = document.getElementById('geocode-message');
+  const changeMessage = document.getElementById('change-message');
+  const location = JSON.parse(document.getElementById('register-location').textContent);
+  let selectedShelterId = null;
+  let marker = null;
+  let lastSearchedAddress = '';
+  const map = window.L ? L.map('register-map').setView([location.lat, location.lng], 14) : null;
+
+  if (map) {
+    L.tileLayer('/api/map-tiles/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+  } else {
+    geocodeMessage.textContent = '地図ライブラリを読み込めませんでした。';
+  }
+
+  function setMarker(latitude, longitude, label) {
+    if (!map) return;
+    if (marker) map.removeLayer(marker);
+    marker = L.marker([latitude, longitude]).addTo(map).bindPopup(label).openPopup();
+    map.setView([latitude, longitude], 16);
+  }
+
+  function resetForm() {
+    selectedShelterId = null;
+    form.reset();
+    lastSearchedAddress = '';
+    geocodeMessage.textContent = '';
+    changeMessage.textContent = '';
+    if (marker && map) map.removeLayer(marker);
+    marker = null;
+    if (map) map.setView([location.lat, location.lng], 14);
+  }
+
+  async function searchAddress() {
+    const address = addressInput.value.trim();
+    if (!address || address === lastSearchedAddress) return;
+    lastSearchedAddress = address;
+    geocodeMessage.textContent = '住所を検索しています...';
+    try {
+      const response = await fetch('/api/geocode?address=' + encodeURIComponent(address));
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '住所を検索できませんでした。');
+      setMarker(data.latitude, data.longitude, data.display_name || address);
+      geocodeMessage.textContent = '';
+    } catch (error) {
+      geocodeMessage.textContent = error.message || '住所検索に失敗しました。';
+    }
+  }
+
+  addressInput.addEventListener('change', searchAddress);
+  addressInput.addEventListener('blur', searchAddress);
+  addressInput.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      searchAddress();
+    }
+  });
+
+  fetch('/api/shelters')
+    .then(response => response.ok ? response.json() : Promise.reject(new Error('避難所一覧を取得できませんでした。')))
+    .then(shelters => shelters.forEach(shelter => {
+      const option = document.createElement('option');
+      option.value = shelter.id;
+      option.textContent = shelter.name;
+      select.appendChild(option);
+    }))
+    .catch(error => { changeMessage.textContent = error.message; });
+
+  select.addEventListener('change', async function () {
+    if (!select.value) {
+      resetForm();
+      return;
+    }
+    selectedShelterId = select.value;
+    try {
+      const response = await fetch('/api/shelters/' + encodeURIComponent(selectedShelterId));
+      const shelter = await response.json();
+      if (!response.ok) throw new Error(shelter.error || '避難所情報を取得できませんでした。');
+      document.getElementById('name').value = shelter.name || '';
+      addressInput.value = shelter.address || '';
+      document.getElementById('capacity').value = shelter.capacity ?? '';
+      document.querySelectorAll('input[name="support_options"]').forEach(input => {
+        input.checked = (shelter.support_options || []).includes(input.value);
+      });
+      lastSearchedAddress = '';
+      await searchAddress();
+      changeMessage.textContent = '';
+    } catch (error) {
+      changeMessage.textContent = error.message || '避難所情報の取得に失敗しました。';
+    }
+  });
+
+  form.addEventListener('submit', async function (event) {
+    if (!selectedShelterId) return;
+    event.preventDefault();
+    changeMessage.textContent = '';
+    const payload = {
+      name: document.getElementById('name').value,
+      address: addressInput.value,
+      capacity: document.getElementById('capacity').value,
+      support_options: Array.from(document.querySelectorAll('input[name="support_options"]:checked')).map(input => input.value)
+    };
+    try {
+      const response = await fetch('/api/shelters/' + encodeURIComponent(selectedShelterId), {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '避難所を更新できませんでした。');
+      alert(data.message);
+      select.value = '';
+      resetForm();
+    } catch (error) {
+      changeMessage.textContent = error.message || '避難所の更新に失敗しました。';
+    }
+  });
+});
+</script>
 {% endblock %}
